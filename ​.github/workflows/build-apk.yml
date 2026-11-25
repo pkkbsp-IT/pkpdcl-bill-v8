@@ -1,5 +1,5 @@
 
-name: Build PKPDCL APK V2
+name: Build PKPDCL APK V3
 
 on:
   push:
@@ -27,15 +27,11 @@ jobs:
           cache: pip
 
       - name: Install system dependencies
+        shell: bash
         run: |
+          set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y \
-            git zip unzip \
-            openjdk-17-jdk \
-            autoconf automake libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev \
-            cmake libffi-dev libssl-dev \
-            build-essential ccache libltdl-dev
+          sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev build-essential ccache libltdl-dev
 
       - name: Install Python dependencies
         run: |
@@ -58,6 +54,7 @@ jobs:
           buildozer android debug
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: PKPDCL-Bill-Calculator-APK
