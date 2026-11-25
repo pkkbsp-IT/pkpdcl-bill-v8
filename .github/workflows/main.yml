@@ -30,66 +30,17 @@ jobs:
           pip install --upgrade pip
           pip install --user --upgrade buildozer cython==0.29.36 setuptools wheel
 
-      - name: Fix libffi autogen and autoreconf cleanly
+      - name: Build Android APK
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-
-          if [ ! -f /usr/bin/autoreconf.real ]; then
-            sudo mv /usr/bin/autoreconf /usr/bin/autoreconf.real
+          set -o pipefail
+          buildozer android debug 2>&1 | tee build.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "=== LAST 60 LINES OF BUILD LOG ==="
+            tail -n 60 build.log
+            exit $EXIT_CODE
           fi
-
-          cat << 'EOF' | sudo tee /usr/bin/autoreconf > /dev/null
-          #!/usr/bin/env bash
-          if [ -f "configure.ac" ] && grep -q "LT_SYS_SYMBOL_USCORE" configure.ac; then
-            if ! grep -q "m4_pattern_allow(\[LT_SYS_SYMBOL_USCORE\])" configure.ac; then
-              sed -i '1i m4_pattern_allow([LT_SYS_SYMBOL_USCORE])' configure.ac
-            fi
-            libtoolize --force --copy || true
-          fi
-          /usr/bin/autoreconf.real "$@" && exit 0
-          RC=$?
-          if [ -f "configure.ac" ] && grep -q "LT_SYS_SYMBOL_USCORE" configure.ac; then
-            aclocal -I m4 --force || aclocal --force || true
-            autoconf --force || true
-            automake --add-missing --copy --force || true
-            if [ -f "configure" ]; then
-              chmod +x configure
-              exit 0
-            fi
-          fi
-          exit $RC
-          EOF
-          sudo chmod +x /usr/bin/autoreconf
-
-          (
-            while true; do
-              for autogen in .buildozer/android/platform/build-*/build/other_builds/libffi/*/libffi/autogen.sh; do
-                if [ -f "$autogen" ] && ! grep -q "BYPASSED_BY_WORKFLOW" "$autogen"; then
-                  cat << 'INNER_EOF' > "$autogen"
-          #!/usr/bin/env bash
-          # BYPASSED_BY_WORKFLOW
-          if [ -f "configure.ac" ] && ! grep -q "m4_pattern_allow(\[LT_SYS_SYMBOL_USCORE\])" configure.ac; then
-            sed -i '1i m4_pattern_allow([LT_SYS_SYMBOL_USCORE])' configure.ac
-          fi
-          libtoolize --force --copy || true
-          aclocal -I m4 --force || aclocal --force || true
-          /usr/bin/autoreconf.real -fiv || autoconf --force || true
-          automake --add-missing --copy --force || true
-          if [ -f "configure" ]; then
-            chmod +x configure
-          fi
-          exit 0
-          INNER_EOF
-                  chmod +x "$autogen"
-                fi
-              done
-              sleep 1
-            done
-          ) &
-          WATCHER_PID=$!
-          trap "kill $WATCHER_PID 2>/dev/null || true" EXIT
-
-          buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
