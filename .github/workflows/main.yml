@@ -47,7 +47,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --user \
             buildozer==1.5.0 \
-            cython==0.29.36 \
+            "cython<3.1" \
             setuptools wheel
 
       - name: Check project files
