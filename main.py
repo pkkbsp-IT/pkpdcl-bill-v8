@@ -1323,3 +1323,68 @@ def _global_excepthook(exctype, value, tb):
 if __name__ == "__main__":
     sys.excepthook = _global_excepthook
     CGBijliBillApp().run()
+def _fpdf_save_pdf(self, *_):
+    bill = self.current_bill
+    if not bill:
+        self.status.text = "Calculate bill first."
+        return None
+    try:
+        from pdf_helper import create_pkpdcl_pdf
+
+        folder = output_folder(App.get_running_app(), "bills")
+        safe_no = re.sub(r"[^A-Za-z0-9_-]", "", bill["consumer"]) or "consumer"
+        safe_month = re.sub(r"[^0-9-]", "", bill["month"])
+        path = os.path.join(folder, f"Bill_{safe_no}_{safe_month}.pdf")
+        due = payment_due_date(bill["date"])
+
+        qr_path = os.path.join(folder, f"QR_{safe_no}_{safe_month}.png")
+        qr_img = create_upi_qr(bill["total"], bill["consumer"], bill["month"], qr_path)
+
+        pdf_data = {
+            "Company": COMPANY_NAME,
+            "Consumer Name": bill["name"],
+            "BP Number": bill["consumer"],
+            "Mobile": bill["mobile"],
+            "Meter Number": bill["meter"],
+            "Address": bill["address"],
+            "Bill Cycle": bill["month"],
+            "Bill Date": bill["date"],
+            "Due Date": due,
+            "Status": bill.get("status", "Unpaid"),
+            "Prev Reading": f"{bill['old']:g}",
+            "Curr Reading": f"{bill['new']:g}",
+            "Units": f"{bill['units']:g}",
+            "Rate": f"Rs. {bill['rate']:.2f}/unit",
+            "Energy Charge": money(bill["energy"]),
+            "Fixed Charge": money(bill["fixed"]),
+            "Duty": money(bill["duty"]),
+            "Cess": money(bill["cess"]),
+            "Other": money(bill["other"]),
+            "Arrears": money(bill["arrears"]),
+            "Adjustment": money(bill["adjustment"]),
+            "Gross": money(bill["gross"]),
+            "Rebate": money(bill["rebate"]),
+            "NET PAYABLE": money(bill["total"]),
+            "UPI ID": UPI_ID,
+        }
+
+        create_pkpdcl_pdf(
+            pdf_data,
+            output_path=path,
+            logo_path=find_logo(),
+            qr_path=qr_img if (qr_img and os.path.isfile(qr_img)) else None,
+        )
+
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            raise IOError("PDF was not created correctly.")
+        self.saved_pdf_path = path
+        self.status.text = f"PDF saved: {path}"
+        show_message("PDF Generated", f"Saved successfully:\n{path}")
+        return path
+    except Exception as e:
+        self.saved_pdf_path = None
+        show_message("PDF Error", f"Failed to generate PDF:\n{e}")
+        return None
+
+
+BillScreen.save_pdf = _fpdf_save_pdf
