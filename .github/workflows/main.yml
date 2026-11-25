@@ -2,12 +2,17 @@ name: Build PKPDCL APK
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
     steps:
       - name: Checkout code
@@ -18,34 +23,75 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk autoconf automake libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+            git zip unzip \
+            build-essential ccache \
+            autoconf automake libtool \
+            pkg-config cmake \
+            zlib1g-dev \
+            libncurses5-dev libncursesw5-dev \
+            libtinfo5 libffi-dev libssl-dev \
+            libltdl-dev
 
       - name: Install Buildozer and Cython
         run: |
-          pip install --upgrade pip
-          pip install --user --upgrade buildozer cython==0.29.36 setuptools wheel
+          python -m pip install --upgrade pip
+          python -m pip install --user \
+            buildozer==1.5.0 \
+            cython==0.29.36 \
+            setuptools wheel
+
+      - name: Check project files
+        run: |
+          echo "Checking project..."
+          ls -la
+          test -f buildozer.spec
+          echo "Buildozer spec found!"
 
       - name: Build Android APK
+        shell: bash
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          set -o pipefail
+
+          set +e
           buildozer android debug 2>&1 | tee build.log
           EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "=== ERRORS ==="
-            grep -iE "error:|exception|stderr|failed|no space|command failed" build.log | tail -n 30 || true
-            echo "=== LAST 40 LINES ==="
-            tail -n 40 build.log
-            exit $EXIT_CODE
+          set -e
+
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "APK BUILD FAILED!"
+            echo "=== KEY ERROR LINES ==="
+            grep -iE "error:|exception|stderr|command failed|no space left" build.log | tail -n 30 || true
+            echo "Last 100 lines of build log:"
+            tail -n 100 build.log
+            exit "$EXIT_CODE"
           fi
 
+          echo "APK BUILD SUCCESSFUL!"
+
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: pkpdcl-bill-calculator-apk
+          name: PKPDCL-Bill-Calculator-APK
           path: bin/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Build Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PKPDCL-Build-Log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
