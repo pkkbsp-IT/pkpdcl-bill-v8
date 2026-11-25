@@ -37,8 +37,10 @@ jobs:
           buildozer android debug 2>&1 | tee build.log
           EXIT_CODE=${PIPESTATUS[0]}
           if [ $EXIT_CODE -ne 0 ]; then
-            echo "=== LAST 60 LINES OF BUILD LOG ==="
-            tail -n 60 build.log
+            echo "=== ERRORS ==="
+            grep -iE "error:|exception|stderr|failed|no space|command failed" build.log | tail -n 30 || true
+            echo "=== LAST 40 LINES ==="
+            tail -n 40 build.log
             exit $EXIT_CODE
           fi
 
