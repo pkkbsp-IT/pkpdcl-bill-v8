@@ -20,16 +20,26 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            git zip unzip openjdk-17-jdk autoconf automake libtool pkg-config \
+            git zip unzip openjdk-17-jdk autoconf automake libtool libtool-bin pkg-config \
             libffi-dev m4 build-essential ccache
+
+      - name: Cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
 
       - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip setuptools wheel cython buildozer
 
       - name: Build Android APK
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
-          rm -rf .buildozer/android/platform/build-*/dists/*
+          rm -rf .buildozer/android/platform/build-*
           buildozer android debug
 
       - name: Upload APK artifact
