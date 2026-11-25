@@ -18,13 +18,19 @@ jobs:
           python-version: '3.11'
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git zip unzip openjdk-17-jdk autoconf automake libtool pkg-config zlib1g-dev libffi-dev libssl-dev cmake build-essential ccache
+        run: |
+          sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            git zip unzip openjdk-17-jdk autoconf automake libtool pkg-config \
+            libffi-dev m4 build-essential ccache
 
       - name: Install Buildozer and Cython
-        run: pip install --upgrade pip setuptools wheel cython buildozer
+        run: |
+          pip install --upgrade pip setuptools wheel cython buildozer
 
       - name: Build Android APK
-        run: buildozer android debug
+        run: |
+          rm -rf .buildozer/android/platform/build-*/dists/*
+          buildozer android debug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
