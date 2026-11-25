@@ -1,5 +1,5 @@
 
-name: Build PKPDCL APK
+name: Build PKPDCL APK V2
 
 on:
   push:
