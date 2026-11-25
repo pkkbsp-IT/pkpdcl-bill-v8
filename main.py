@@ -4,7 +4,6 @@ import os
 import re
 import sys
 import sqlite3
-import html
 import traceback
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
@@ -1071,130 +1070,51 @@ class BillScreen(Screen):
             self.status.text = "Calculate bill first."
             return None
         try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib import colors
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as PDFImage
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.enums import TA_CENTER
-            from reportlab.lib.units import mm
+            from pdf_helper import create_pkpdcl_pdf
 
             folder = output_folder(App.get_running_app(), "bills")
             safe_no = re.sub(r"[^A-Za-z0-9_-]", "", bill["consumer"]) or "consumer"
             safe_month = re.sub(r"[^0-9-]", "", bill["month"])
             path = os.path.join(folder, f"Bill_{safe_no}_{safe_month}.pdf")
             due = payment_due_date(bill["date"])
-            styles = getSampleStyleSheet()
-
-            center_bold = ParagraphStyle(
-                "CenterBold", parent=styles["Normal"], fontSize=10, leading=12,
-                alignment=TA_CENTER, fontName="Helvetica-Bold"
-            )
-            header_style = ParagraphStyle(
-                "Header", parent=styles["Normal"], fontSize=15, leading=17,
-                alignment=TA_CENTER, textColor=colors.HexColor("#0B2447"),
-                fontName="Helvetica-Bold", spaceAfter=8
-            )
-            sub_style = ParagraphStyle(
-                "Sub", parent=styles["Normal"], fontSize=9, leading=11,
-                alignment=TA_CENTER, textColor=colors.HexColor("#6B7280"), spaceAfter=12
-            )
-            section_style = ParagraphStyle(
-                "Section", parent=styles["Heading2"], fontSize=11,
-                textColor=colors.HexColor("#0B2447"), spaceBefore=8,
-                spaceAfter=4, fontName="Helvetica-Bold"
-            )
-            normal_small = ParagraphStyle(
-                "Small", parent=styles["Normal"], fontSize=8, leading=10
-            )
-
-            def p(value):
-                return Paragraph(html.escape(str(value)), normal_small)
-
-            story = []
-            logo_path = find_logo()
-            if logo_path and os.path.isfile(logo_path):
-                try:
-                    logo = PDFImage(logo_path, width=35 * mm, height=35 * mm, kind="proportional")
-                    logo.hAlign = "CENTER"
-                    story.extend([logo, Spacer(1, 4)])
-                except Exception:
-                    pass
-
-            story.append(Paragraph(html.escape(COMPANY_NAME), header_style))
-            story.append(Paragraph("ELECTRICITY BILL", sub_style))
-
-            info_data = [
-                [Paragraph("<b>Consumer Name</b>", normal_small), p(bill["name"]),
-                 Paragraph("<b>BP Number</b>", normal_small), p(bill["consumer"])],
-                [Paragraph("<b>Mobile</b>", normal_small), p(bill["mobile"]),
-                 Paragraph("<b>Meter Number</b>", normal_small), p(bill["meter"])],
-                [Paragraph("<b>Address</b>", normal_small), p(bill["address"]),
-                 Paragraph("<b>Bill Cycle</b>", normal_small), p(bill["month"])],
-                [Paragraph("<b>Bill Date</b>", normal_small), p(bill["date"]),
-                 Paragraph("<b>Due Date</b>", normal_small), p(due)],
-                [Paragraph("<b>Payment Status</b>", normal_small), p(bill.get("status", "Unpaid")),
-                 Paragraph("<b>UPI ID</b>", normal_small), p(UPI_ID)],
-                [Paragraph("<b>Prev Reading</b>", normal_small), p(f"{bill['old']:g}"),
-                 Paragraph("<b>Curr Reading</b>", normal_small), p(f"{bill['new']:g}")],
-                [Paragraph("<b>Units</b>", normal_small), p(f"{bill['units']:g}"),
-                 Paragraph("<b>Rate</b>", normal_small), p(f"Rs. {bill['rate']:.2f}/unit")],
-            ]
-            info_table = Table(info_data, colWidths=[30 * mm, 60 * mm, 30 * mm, 55 * mm])
-            info_table.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F3F4F6")),
-                ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#F3F4F6")),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING", (0, 0), (-1, -1), 3),
-            ]))
-            story.append(Paragraph("CONSUMER DETAILS", section_style))
-            story.append(info_table)
-
-            calc_data = [
-                [Paragraph("<b>Charge Description</b>", center_bold),
-                 Paragraph("<b>Amount (Rs.)</b>", center_bold)],
-                ["Energy Charge", f"{bill['energy']:,.2f}"],
-                ["Fixed Charge", f"{bill['fixed']:,.2f}"],
-                ["Electricity Duty", f"{bill['duty']:,.2f}"],
-                ["Cess", f"{bill['cess']:,.2f}"],
-                ["Other Charges", f"{bill['other']:,.2f}"],
-                ["Arrears", f"{bill['arrears']:,.2f}"],
-                ["Adjustment", f"{bill['adjustment']:,.2f}"],
-                [Paragraph("<b>Gross Amount</b>", center_bold), f"{bill['gross']:,.2f}"],
-                ["Less: Rebate", f"-{bill['rebate']:,.2f}"],
-                [Paragraph("<b>NET PAYABLE</b>", center_bold),
-                 Paragraph(f"<b>{money(bill['total'])}</b>", center_bold)],
-            ]
-            calc_table = Table(calc_data, colWidths=[130 * mm, 45 * mm])
-            calc_table.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("FONTNAME", (0, -1), (1, -1), "Helvetica-Bold"),
-                ("BACKGROUND", (0, 0), (1, 0), colors.HexColor("#E5E7EB")),
-                ("BACKGROUND", (0, -1), (1, -1), colors.HexColor("#D1FAE5")),
-                ("PADDING", (0, 0), (-1, -1), 4),
-            ]))
-            story.extend([Spacer(1, 8), Paragraph("BILL CALCULATION", section_style), calc_table])
-            story.extend([Spacer(1, 8), Paragraph("SCAN TO PAY", section_style)])
 
             qr_path = os.path.join(folder, f"QR_{safe_no}_{safe_month}.png")
             qr_img = create_upi_qr(bill["total"], bill["consumer"], bill["month"], qr_path)
-            if qr_img and os.path.isfile(qr_img):
-                qr = PDFImage(qr_img, width=28 * mm, height=28 * mm, kind="proportional")
-                qr.hAlign = "CENTER"
-                story.append(qr)
-                story.append(Paragraph(f"UPI ID: {html.escape(UPI_ID)}", center_bold))
-                story.append(Paragraph(
-                    "Scan with any UPI app and verify the payee and amount before paying.",
-                    normal_small
-                ))
 
-            story.extend([Spacer(1, 10), Paragraph("This is a computer generated bill.", sub_style)])
-            doc = SimpleDocTemplate(
-                path, pagesize=A4, rightMargin=15 * mm, leftMargin=15 * mm,
-                topMargin=15 * mm, bottomMargin=15 * mm
+            pdf_data = {
+                "Company": COMPANY_NAME,
+                "Consumer Name": bill["name"],
+                "BP Number": bill["consumer"],
+                "Mobile": bill["mobile"],
+                "Meter Number": bill["meter"],
+                "Address": bill["address"],
+                "Bill Cycle": bill["month"],
+                "Bill Date": bill["date"],
+                "Due Date": due,
+                "Status": bill.get("status", "Unpaid"),
+                "Prev Reading": f"{bill['old']:g}",
+                "Curr Reading": f"{bill['new']:g}",
+                "Units": f"{bill['units']:g}",
+                "Rate": f"Rs. {bill['rate']:.2f}/unit",
+                "Energy Charge": money(bill["energy"]),
+                "Fixed Charge": money(bill["fixed"]),
+                "Duty": money(bill["duty"]),
+                "Cess": money(bill["cess"]),
+                "Other": money(bill["other"]),
+                "Arrears": money(bill["arrears"]),
+                "Adjustment": money(bill["adjustment"]),
+                "Gross": money(bill["gross"]),
+                "Rebate": money(bill["rebate"]),
+                "NET PAYABLE": money(bill["total"]),
+                "UPI ID": UPI_ID,
+            }
+
+            create_pkpdcl_pdf(
+                pdf_data,
+                output_path=path,
+                logo_path=find_logo(),
+                qr_path=qr_img if (qr_img and os.path.isfile(qr_img)) else None,
             )
-            doc.build(story)
 
             if not os.path.isfile(path) or os.path.getsize(path) == 0:
                 raise IOError("PDF was not created correctly.")
@@ -1323,68 +1243,3 @@ def _global_excepthook(exctype, value, tb):
 if __name__ == "__main__":
     sys.excepthook = _global_excepthook
     CGBijliBillApp().run()
-def _fpdf_save_pdf(self, *_):
-    bill = self.current_bill
-    if not bill:
-        self.status.text = "Calculate bill first."
-        return None
-    try:
-        from pdf_helper import create_pkpdcl_pdf
-
-        folder = output_folder(App.get_running_app(), "bills")
-        safe_no = re.sub(r"[^A-Za-z0-9_-]", "", bill["consumer"]) or "consumer"
-        safe_month = re.sub(r"[^0-9-]", "", bill["month"])
-        path = os.path.join(folder, f"Bill_{safe_no}_{safe_month}.pdf")
-        due = payment_due_date(bill["date"])
-
-        qr_path = os.path.join(folder, f"QR_{safe_no}_{safe_month}.png")
-        qr_img = create_upi_qr(bill["total"], bill["consumer"], bill["month"], qr_path)
-
-        pdf_data = {
-            "Company": COMPANY_NAME,
-            "Consumer Name": bill["name"],
-            "BP Number": bill["consumer"],
-            "Mobile": bill["mobile"],
-            "Meter Number": bill["meter"],
-            "Address": bill["address"],
-            "Bill Cycle": bill["month"],
-            "Bill Date": bill["date"],
-            "Due Date": due,
-            "Status": bill.get("status", "Unpaid"),
-            "Prev Reading": f"{bill['old']:g}",
-            "Curr Reading": f"{bill['new']:g}",
-            "Units": f"{bill['units']:g}",
-            "Rate": f"Rs. {bill['rate']:.2f}/unit",
-            "Energy Charge": money(bill["energy"]),
-            "Fixed Charge": money(bill["fixed"]),
-            "Duty": money(bill["duty"]),
-            "Cess": money(bill["cess"]),
-            "Other": money(bill["other"]),
-            "Arrears": money(bill["arrears"]),
-            "Adjustment": money(bill["adjustment"]),
-            "Gross": money(bill["gross"]),
-            "Rebate": money(bill["rebate"]),
-            "NET PAYABLE": money(bill["total"]),
-            "UPI ID": UPI_ID,
-        }
-
-        create_pkpdcl_pdf(
-            pdf_data,
-            output_path=path,
-            logo_path=find_logo(),
-            qr_path=qr_img if (qr_img and os.path.isfile(qr_img)) else None,
-        )
-
-        if not os.path.isfile(path) or os.path.getsize(path) == 0:
-            raise IOError("PDF was not created correctly.")
-        self.saved_pdf_path = path
-        self.status.text = f"PDF saved: {path}"
-        show_message("PDF Generated", f"Saved successfully:\n{path}")
-        return path
-    except Exception as e:
-        self.saved_pdf_path = None
-        show_message("PDF Error", f"Failed to generate PDF:\n{e}")
-        return None
-
-
-BillScreen.save_pdf = _fpdf_save_pdf
