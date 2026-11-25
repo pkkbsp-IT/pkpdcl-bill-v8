@@ -38,10 +38,21 @@ jobs:
       - name: Build Android APK
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-          ACLOCAL_PATH: /usr/share/aclocal
-          ACLOCAL: "aclocal -I /usr/share/aclocal"
+          ACLOCAL_PATH: /usr/share/aclocal:/usr/local/share/aclocal
+          ACLOCAL: "aclocal -I /usr/share/aclocal -I /usr/local/share/aclocal"
+          LIBTOOLIZE: /usr/bin/libtoolize
+          AUTORECONF: /usr/bin/autoreconf
         run: |
           rm -rf .buildozer
+          mkdir -p /tmp/bin
+          cat << 'EOF' > /tmp/bin/autoreconf
+          #!/usr/bin/env bash
+          libtoolize --copy --force || true
+          cat /usr/share/aclocal/libtool*.m4 /usr/share/aclocal/lt*.m4 >> aclocal.m4 2>/dev/null || true
+          exec /usr/bin/autoreconf -f -i "$@"
+          EOF
+          chmod +x /tmp/bin/autoreconf
+          export PATH="/tmp/bin:$PATH"
           buildozer android debug
 
       - name: Upload APK artifact
