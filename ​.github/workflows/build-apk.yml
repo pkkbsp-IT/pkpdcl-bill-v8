@@ -30,27 +30,36 @@ jobs:
           pip install --upgrade pip
           pip install --user --upgrade buildozer cython==0.29.36 setuptools wheel
 
-      - name: Bypass libffi autoreconf LT_SYS_SYMBOL_USCORE error
+      - name: Fix libffi LT_SYS_SYMBOL_USCORE in autogen.sh and autoreconf
         run: |
           export PATH="$HOME/.local/bin:$PATH"
 
-          cat << 'EOF' > "$HOME/.local/bin/autoreconf"
+          if [ ! -f /usr/bin/autoreconf.real ]; then
+            sudo mv /usr/bin/autoreconf /usr/bin/autoreconf.real
+          fi
+
+          cat << 'EOF' | sudo tee /usr/bin/autoreconf > /dev/null
           #!/usr/bin/env bash
-          /usr/bin/autoreconf "$@" && exit 0
+          if [ -f "configure.ac" ] && grep -q "LT_SYS_SYMBOL_USCORE" configure.ac; then
+            if ! grep -q "m4_pattern_allow(\[LT_SYS_SYMBOL_USCORE\])" configure.ac; then
+              sed -i '1i m4_pattern_allow([LT_SYS_SYMBOL_USCORE])' configure.ac
+            fi
+            libtoolize --force --copy || true
+          fi
+          /usr/bin/autoreconf.real "$@" && exit 0
           RC=$?
           if [ -f "configure.ac" ] && grep -q "LT_SYS_SYMBOL_USCORE" configure.ac; then
-            echo "Bypassing autoreconf failure due to LT_SYS_SYMBOL_USCORE..."
-            aclocal --force || true
-            libtoolize --force --copy || true
+            aclocal -I m4 --force || aclocal --force || true
             autoconf --force || true
             automake --add-missing --copy --force || true
-            if [ -x "./configure" ]; then
+            if [ -f "configure" ]; then
+              chmod +x configure
               exit 0
             fi
           fi
           exit $RC
           EOF
-          chmod +x "$HOME/.local/bin/autoreconf"
+          sudo chmod +x /usr/bin/autoreconf
 
           buildozer android debug
 
