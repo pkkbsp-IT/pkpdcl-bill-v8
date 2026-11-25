@@ -27,13 +27,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-v5-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-v8-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-v5-${{ runner.os }}-
+            buildozer-v8-${{ runner.os }}-
 
       - name: Install Buildozer and Cython
         run: |
-          pip install --upgrade pip setuptools wheel cython buildozer
+          pip install --upgrade pip setuptools wheel cython==0.29.37 buildozer
 
       - name: Build Android APK
         env:
@@ -43,7 +43,7 @@ jobs:
           LIBTOOLIZE: /usr/bin/libtoolize
           AUTORECONF: /usr/bin/autoreconf
         run: |
-          rm -rf .buildozer
+          rm -rf .buildozer/android/platform/build-*/build/other_builds/libffi
           mkdir -p /tmp/bin
           cat << 'EOF' > /tmp/bin/autoreconf
           #!/usr/bin/env bash
