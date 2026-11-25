@@ -7,7 +7,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,43 +20,41 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            git zip unzip openjdk-17-jdk autoconf automake libtool libtool-bin pkg-config \
-            libffi-dev m4 build-essential ccache
-
-      - name: Cache Buildozer
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: buildozer-v8-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-v8-${{ runner.os }}-
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk autoconf automake libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
 
       - name: Install Buildozer and Cython
         run: |
-          pip install --upgrade pip setuptools wheel cython==0.29.37 buildozer
+          pip install --upgrade pip
+          pip install --user --upgrade buildozer cython==0.29.36 setuptools wheel
 
-      - name: Build Android APK
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-          ACLOCAL_PATH: /usr/share/aclocal:/usr/local/share/aclocal
-          ACLOCAL: "aclocal -I /usr/share/aclocal -I /usr/local/share/aclocal"
-          LIBTOOLIZE: /usr/bin/libtoolize
-          AUTORECONF: /usr/bin/autoreconf
+      - name: Bypass libffi autoreconf LT_SYS_SYMBOL_USCORE error
         run: |
-          rm -rf .buildozer/android/platform/build-*/build/other_builds/libffi
-          mkdir -p /tmp/bin
-          cat << 'EOF' > /tmp/bin/autoreconf
+          export PATH="$HOME/.local/bin:$PATH"
+
+          cat << 'EOF' > "$HOME/.local/bin/autoreconf"
           #!/usr/bin/env bash
-          libtoolize --copy --force || true
-          cat /usr/share/aclocal/libtool*.m4 /usr/share/aclocal/lt*.m4 >> aclocal.m4 2>/dev/null || true
-          exec /usr/bin/autoreconf -f -i "$@"
+          /usr/bin/autoreconf "$@" && exit 0
+          RC=$?
+          if [ -f "configure.ac" ] && grep -q "LT_SYS_SYMBOL_USCORE" configure.ac; then
+            echo "Bypassing autoreconf failure due to LT_SYS_SYMBOL_USCORE..."
+            aclocal --force || true
+            libtoolize --force --copy || true
+            autoconf --force || true
+            automake --add-missing --copy --force || true
+            if [ -x "./configure" ]; then
+              exit 0
+            fi
+          fi
+          exit $RC
           EOF
-          chmod +x /tmp/bin/autoreconf
-          export PATH="/tmp/bin:$PATH"
+          chmod +x "$HOME/.local/bin/autoreconf"
+
           buildozer android debug
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: pkpdcl-bill-calculator-apk
