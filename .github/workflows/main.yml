@@ -33,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip \
+            git zip unzip file \
             build-essential ccache \
             autoconf automake libtool \
             pkg-config cmake \
@@ -56,6 +56,11 @@ jobs:
           ls -la
           test -f buildozer.spec
           echo "Buildozer spec found!"
+
+      - name: Clean stale build folders
+        run: |
+          rm -rf .buildozer/android/platform/build-*/build/other_builds/fonttools || true
+          rm -rf .buildozer/android/app/_python_bundle || true
 
       - name: Build Android APK
         shell: bash
@@ -80,6 +85,23 @@ jobs:
           fi
 
           echo "APK BUILD SUCCESSFUL!"
+
+      - name: Check and strip x86_64 .so from fontTools in build bundle
+        run: |
+          echo "Checking for x86_64 shared libraries in fontTools..."
+          find .buildozer -path "*fontTools*" -name "*.so" -print | while read -r sofile; do
+            INFO=$(file "$sofile" || true)
+            echo "$sofile -> $INFO"
+            if echo "$INFO" | grep -qiE "x86-64|x86_64"; then
+              echo "Removing x86_64 binary: $sofile"
+              rm -f "$sofile"
+            fi
+          done
+
+      - name: Rebuild APK if x86_64 .so was removed
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          buildozer android debug 2>&1 | tee -a build.log
 
       - name: Upload APK
         if: success()
