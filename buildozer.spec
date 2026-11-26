@@ -8,7 +8,7 @@ source.include_exts = py,png,jpg,kv,atlas,ttf
 
 version = 8.1
 
-requirements = python3,kivy==2.3.1,cython>=3.0.11,charset_normalizer<3.5,pillow,qrcode,fpdf2,fonttools
+requirements = python3,kivy==2.3.1,cython>=3.0.11,charset_normalizer<3.5,pillow,qrcode,fpdf2==2.7.9
 
 orientation = portrait
 fullscreen = 0
