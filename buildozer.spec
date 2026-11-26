@@ -6,9 +6,9 @@ package.domain = org.pkpdcl
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
-version = 8.2
+version = 8.3
 
-requirements = python3,kivy==2.3.1,cython>=3.0.11,pillow,qrcode,fpdf
+requirements = python3,kivy==2.3.1,cython>=3.0.11,pillow,qrcode
 
 orientation = portrait
 fullscreen = 0
