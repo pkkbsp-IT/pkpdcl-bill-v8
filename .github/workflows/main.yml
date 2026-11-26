@@ -87,18 +87,23 @@ jobs:
           echo "APK BUILD SUCCESSFUL!"
 
       - name: Check and strip x86_64 .so from fontTools in build bundle
+        id: strip_so
         run: |
+          REMOVED=0
           echo "Checking for x86_64 shared libraries in fontTools..."
-          find .buildozer -path "*fontTools*" -name "*.so" -print | while read -r sofile; do
+          while IFS= read -r -d '' sofile; do
             INFO=$(file "$sofile" || true)
             echo "$sofile -> $INFO"
             if echo "$INFO" | grep -qiE "x86-64|x86_64"; then
               echo "Removing x86_64 binary: $sofile"
               rm -f "$sofile"
+              REMOVED=1
             fi
-          done
+          done < <(find .buildozer -path "*fontTools*" -name "*.so" -print0 2>/dev/null || true)
+          echo "removed=$REMOVED" >> "$GITHUB_OUTPUT"
 
       - name: Rebuild APK if x86_64 .so was removed
+        if: steps.strip_so.outputs.removed == '1'
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           buildozer android debug 2>&1 | tee -a build.log
