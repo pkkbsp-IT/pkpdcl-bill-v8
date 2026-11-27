@@ -4,11 +4,11 @@ package.name = pkpdclbilling
 package.domain = org.pkpdcl
 
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,ttf
+source.include_exts = py,png,jpg,kv,atlas,ttf,json
 
 version = 8.4
 
-requirements = python3,kivy==2.3.1,cython>=3.0.11,pillow,charset-normalizer<3.5.0
+requirements = python3,kivy==2.3.1,cython>=3.0.11,pillow,qrcode,fpdf2,charset-normalizer<3.5.0
 
 orientation = portrait
 fullscreen = 0
