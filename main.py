@@ -16,7 +16,6 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 
-# Safe optional imports
 try:
     import qrcode
 except ImportError:
@@ -233,7 +232,7 @@ def generate_bill_pdf(
     qr_path=None,
 ):
     if FPDF is None:
-        raise RuntimeError("fpdf2 library उपलब्ध नहीं है।")
+        raise RuntimeError("fpdf2 library uplabdh nahi hai.")
 
     pdf_dir = os.path.join(base_dir, "Bills")
     os.makedirs(pdf_dir, exist_ok=True)
@@ -479,7 +478,6 @@ class BillingScreen(Screen):
             self.bg_rct = Rectangle(pos=main_box.pos, size=main_box.size)
         main_box.bind(pos=self._update_bg, size=self._update_bg)
 
-        # Top header
         top_bar = BoxLayout(orientation="horizontal", size_hint_y=None, height=64, spacing=8)
         if self.app_ref.logo_path and os.path.exists(self.app_ref.logo_path):
             top_bar.add_widget(
@@ -487,4 +485,179 @@ class BillingScreen(Screen):
             )
         top_title = Label(
             text="PKPDCL Billing",
-            font_size="1
+            font_size="18sp",
+            bold=True,
+            color=(1, 1, 1, 1),
+            halign="left",
+            valign="middle",
+        )
+        top_title.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
+        top_bar.add_widget(top_title)
+
+        logout_btn = Button(
+            text="Logout",
+            size_hint=(None, None),
+            size=(88, 44),
+            background_normal="",
+            background_color=(0.75, 0.2, 0.2, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+        )
+        logout_btn.bind(on_press=self.do_logout)
+        top_bar.add_widget(logout_btn)
+        main_box.add_widget(top_bar)
+
+        consumers = self.app_ref.data_obj.get("consumers", [])
+        names = [f"{c.get('name', 'Consumer')} ({c.get('bp_id', '')})" for c in consumers] or ["Default Consumer"]
+        self.consumer_spinner = Spinner(
+            text=names[0],
+            values=names,
+            size_hint_y=None,
+            height=48,
+        )
+        self.consumer_spinner.bind(text=self.on_consumer_select)
+        main_box.add_widget(self.consumer_spinner)
+
+        self.info_label = Label(
+            text="",
+            color=(0.88, 0.92, 0.98, 1),
+            size_hint_y=None,
+            halign="left",
+            valign="top",
+        )
+        auto_height_label(self.info_label, min_h=54, pad_y=12)
+        main_box.add_widget(self.info_label)
+
+        self.prev_input = TextInput(
+            hint_text="Previous Reading",
+            input_filter="float",
+            multiline=False,
+            size_hint_y=None,
+            height=48,
+        )
+        main_box.add_widget(self.prev_input)
+
+        self.curr_input = TextInput(
+            hint_text="Current Reading",
+            input_filter="float",
+            multiline=False,
+            size_hint_y=None,
+            height=48,
+        )
+        main_box.add_widget(self.curr_input)
+
+        calc_btn = Button(
+            text="Calculate & Generate Bill PDF",
+            size_hint_y=None,
+            height=50,
+            background_normal="",
+            background_color=(0.12, 0.47, 0.25, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+        )
+        calc_btn.bind(on_press=self.calculate_and_save)
+        main_box.add_widget(calc_btn)
+
+        self.result_label = Label(
+            text="Ready",
+            color=(0.65, 0.95, 0.72, 1),
+            size_hint_y=None,
+            halign="left",
+            valign="top",
+        )
+        auto_height_label(self.result_label, min_h=48, pad_y=14)
+        main_box.add_widget(self.result_label)
+
+        self.qr_image = Image(size_hint_y=None, height=180, allow_stretch=True)
+        main_box.add_widget(self.qr_image)
+
+        outer.add_widget(main_box)
+        self.add_widget(outer)
+        self.on_consumer_select(self.consumer_spinner, self.consumer_spinner.text)
+
+    def _update_bg(self, instance, value):
+        self.bg_rct.pos = instance.pos
+        self.bg_rct.size = instance.size
+
+    def do_logout(self, instance):
+        self.app_ref.sm.current = "login"
+
+    def _current_consumer(self):
+        consumers = self.app_ref.data_obj.get("consumers", [])
+        if not consumers:
+            return {"name": "Consumer", "bp_id": "", "rate": 8.3, "upi": ""}
+        idx = (
+            self.consumer_spinner.values.index(self.consumer_spinner.text)
+            if self.consumer_spinner.text in self.consumer_spinner.values
+            else 0
+        )
+        return consumers[idx]
+
+    def on_consumer_select(self, spinner, text):
+        c = self._current_consumer()
+        self.info_label.text = (
+            f"Name: {c.get('name', '')} | BP ID: {c.get('bp_id', '')}\n"
+            f"Meter: {c.get('meter', '')} | Rate: Rs. {float(c.get('rate', 8.3)):.2f}/unit"
+        )
+
+    def calculate_and_save(self, instance):
+        try:
+            prev_val = float(self.prev_input.text or 0)
+            curr_val = float(self.curr_input.text or 0)
+            if curr_val < prev_val:
+                self.result_label.text = "Error: Current reading must be >= Previous reading."
+                return
+
+            c = self._current_consumer()
+            rate = float(c.get("rate", 8.3))
+            units = curr_val - prev_val
+            amount = units * rate
+
+            qr_path = generate_upi_qr(self.app_ref.base_dir, c, amount)
+            if qr_path and os.path.exists(qr_path):
+                self.qr_image.source = qr_path
+                self.qr_image.reload()
+
+            pdf_path = generate_bill_pdf(
+                self.app_ref.base_dir,
+                c,
+                prev_val,
+                curr_val,
+                units,
+                amount,
+                logo_path=self.app_ref.logo_path,
+                qr_path=qr_path,
+            )
+            save_data_file(self.app_ref.base_dir, self.app_ref.data_obj)
+            self.result_label.text = f"Units: {units:.2f} | Amount: Rs. {amount:.2f}\nSaved: {pdf_path}"
+        except Exception as exc:
+            self.result_label.text = f"Error: {exc}"
+
+
+class PKPDCLBillingApp(App):
+    def build(self):
+        Window.clearcolor = (0.06, 0.09, 0.15, 1)
+        fallback = None
+        try:
+            fallback = self.user_data_dir
+        except Exception:
+            fallback = None
+
+        try:
+            self.base_dir = get_base_dir(fallback_root=fallback)
+            self.logo_path = ensure_logo_file(self.base_dir)
+            self.data_obj = load_or_init_data(self.base_dir)
+
+            self.sm = ScreenManager()
+            self.sm.add_widget(LoginScreen(self, name="login"))
+            self.sm.add_widget(BillingScreen(self, name="billing"))
+            self.sm.current = "login"
+            return self.sm
+        except Exception:
+            tb_text = traceback.format_exc()
+            log_p = save_crash_log(tb_text, fallback_root=fallback)
+            return build_error_widget(tb_text, log_p)
+
+
+if __name__ == "__main__":
+    PKPDCLBillingApp().run()
