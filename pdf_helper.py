@@ -28,6 +28,7 @@ def _resolve_logo_path(logo_path):
         candidates.extend([
             os.path.join(base_dir, "pkpdcl_logo.png"),
             os.path.join(base_dir, "assets", "pkpdcl_logo.png"),
+            os.path.join(base_dir, "images", "pkpdcl_logo.png"),
         ])
     except Exception:
         pass
@@ -36,6 +37,7 @@ def _resolve_logo_path(logo_path):
         candidates.extend([
             os.path.join(cwd, "pkpdcl_logo.png"),
             os.path.join(cwd, "assets", "pkpdcl_logo.png"),
+            os.path.join(cwd, "images", "pkpdcl_logo.png"),
         ])
     except Exception:
         pass
@@ -46,7 +48,27 @@ def _resolve_logo_path(logo_path):
     ])
     for p in candidates:
         if p and os.path.isfile(p) and os.path.getsize(p) > 0:
-            return p
+            return os.path.abspath(p)
+    return None
+
+
+def _resolve_qr_path(qr_path):
+    if not qr_path:
+        return None
+    candidates = [qr_path]
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates.append(os.path.join(base_dir, os.path.basename(str(qr_path))))
+    except Exception:
+        pass
+    try:
+        cwd = os.getcwd()
+        candidates.append(os.path.join(cwd, os.path.basename(str(qr_path))))
+    except Exception:
+        pass
+    for p in candidates:
+        if p and os.path.isfile(p) and os.path.getsize(p) > 0:
+            return os.path.abspath(p)
     return None
 
 
@@ -59,27 +81,35 @@ def _prepare_image_path(img_path, tag="img", is_qr=False):
         with PILImage.open(img_path) as im:
             im.load()
             if is_qr:
-                src = im.convert("RGBA") if im.mode in ("RGBA", "LA", "P", "1") else im.convert("RGB")
-                if src.mode == "RGBA":
-                    bg = PILImage.new("RGBA", src.size, (255, 255, 255, 255))
-                    src = PILImage.alpha_composite(bg, src).convert("RGB")
+                # QR ko crisp rakhne ke liye integer scale use karein
+                gray = im.convert("L")
+                w, h = gray.size
+                if w > 0 and h > 0:
+                    scale = max(1, min(280 // w, 280 // h))
+                    new_w, new_h = w * scale, h * scale
+                    scaled_qr = gray.resize((new_w, new_h), PILImage.Resampling.NEAREST)
+                else:
+                    scaled_qr = gray.resize((280, 280), PILImage.Resampling.NEAREST)
+                    new_w, new_h = 280, 280
+
+                # High-contrast black & white QR ensure karein
+                bw_qr = scaled_qr.point(lambda x: 0 if x < 140 else 255, mode="1").convert("RGB")
                 canvas = PILImage.new("RGB", (300, 300), (255, 255, 255))
-                resized = src.resize((280, 280), PILImage.Resampling.NEAREST)
-                canvas.paste(resized, (10, 10))
+                paste_x = (300 - new_w) // 2
+                paste_y = (300 - new_h) // 2
+                canvas.paste(bw_qr, (paste_x, paste_y))
                 rgb = canvas
             else:
                 if im.mode in ("RGBA", "LA", "P"):
-                    bg = PILImage.new("RGBA", im.size, (255, 255, 255, 255))
                     rgba = im.convert("RGBA")
+                    bg = PILImage.new("RGBA", rgba.size, (255, 255, 255, 255))
                     rgb = PILImage.alpha_composite(bg, rgba).convert("RGB")
                 else:
                     rgb = im.convert("RGB")
 
-            out_dir = os.path.dirname(os.path.abspath(img_path)) or tempfile.gettempdir()
+            out_dir = tempfile.gettempdir()
             os.makedirs(out_dir, exist_ok=True)
-            out_path = os.path.join(out_dir, f"_rendered_{tag}.png")
-            if os.path.abspath(out_path) == os.path.abspath(img_path):
-                out_path = os.path.join(tempfile.gettempdir(), f"_rendered_{tag}.png")
+            out_path = os.path.join(out_dir, f"_pkpdcl_{tag}.png")
             rgb.save(out_path, format="PNG", optimize=False)
             if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
                 return out_path
@@ -126,7 +156,7 @@ def create_pkpdcl_pdf(data, output_path="pkpdcl_bill.pdf", logo_path=None, qr_pa
     y = 8
 
     actual_logo = _resolve_logo_path(logo_path)
-    clean_logo = _prepare_image_path(actual_logo, "pkpdcl_logo", is_qr=False)
+    clean_logo = _prepare_image_path(actual_logo, "logo", is_qr=False) if actual_logo else None
     if clean_logo:
         try:
             logo_w = 24
@@ -314,15 +344,18 @@ def create_pkpdcl_pdf(data, output_path="pkpdcl_bill.pdf", logo_path=None, qr_pa
     pdf.cell(page_w, 4.5, text="SCAN TO PAY", ln=True)
     y = pdf.get_y() + 1.5
 
-    clean_qr = _prepare_image_path(qr_path, "pkpdcl_qr", is_qr=True)
+    actual_qr = _resolve_qr_path(qr_path)
+    clean_qr = _prepare_image_path(actual_qr, "qr", is_qr=True) if actual_qr else None
+    qr_size = 30
     if clean_qr:
         try:
-            qr_size = 30
             qr_x = x_left + (page_w - qr_size) / 2
             pdf.image(clean_qr, x=qr_x, y=y, w=qr_size, h=qr_size)
             y += qr_size + 1.5
         except Exception:
             y += 4
+    else:
+        y += 4
 
     upi_id_text = _clean_text(_pick_val(d, ["UPI ID", "UPI"], "9009203060@ptsbi"))
     pdf.set_xy(x_left, y)
