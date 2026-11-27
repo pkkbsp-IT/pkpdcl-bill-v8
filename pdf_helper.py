@@ -19,19 +19,68 @@ def _pick_val(data_dict, keys, default="-"):
     return default
 
 
-def _prepare_image_path(img_path, tag="img"):
+def _resolve_logo_path(logo_path):
+    candidates = []
+    if logo_path:
+        candidates.append(logo_path)
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates.extend([
+            os.path.join(base_dir, "pkpdcl_logo.png"),
+            os.path.join(base_dir, "assets", "pkpdcl_logo.png"),
+        ])
+    except Exception:
+        pass
+    try:
+        cwd = os.getcwd()
+        candidates.extend([
+            os.path.join(cwd, "pkpdcl_logo.png"),
+            os.path.join(cwd, "assets", "pkpdcl_logo.png"),
+        ])
+    except Exception:
+        pass
+    candidates.extend([
+        "/storage/emulated/0/Download/PKPDCL/pkpdcl_logo.png",
+        "/storage/emulated/0/Download/PKPDCL/assets/pkpdcl_logo.png",
+        "pkpdcl_logo.png",
+    ])
+    for p in candidates:
+        if p and os.path.isfile(p) and os.path.getsize(p) > 0:
+            return p
+    return None
+
+
+def _prepare_image_path(img_path, tag="img", is_qr=False):
     if not img_path or not os.path.isfile(img_path) or os.path.getsize(img_path) == 0:
         return None
     try:
         from PIL import Image as PILImage
 
         with PILImage.open(img_path) as im:
-            rgb = im.convert("RGB")
+            im.load()
+            if is_qr:
+                src = im.convert("RGBA") if im.mode in ("RGBA", "LA", "P", "1") else im.convert("RGB")
+                if src.mode == "RGBA":
+                    bg = PILImage.new("RGBA", src.size, (255, 255, 255, 255))
+                    src = PILImage.alpha_composite(bg, src).convert("RGB")
+                canvas = PILImage.new("RGB", (300, 300), (255, 255, 255))
+                resized = src.resize((280, 280), PILImage.Resampling.NEAREST)
+                canvas.paste(resized, (10, 10))
+                rgb = canvas
+            else:
+                if im.mode in ("RGBA", "LA", "P"):
+                    bg = PILImage.new("RGBA", im.size, (255, 255, 255, 255))
+                    rgba = im.convert("RGBA")
+                    rgb = PILImage.alpha_composite(bg, rgba).convert("RGB")
+                else:
+                    rgb = im.convert("RGB")
+
             out_dir = os.path.dirname(os.path.abspath(img_path)) or tempfile.gettempdir()
+            os.makedirs(out_dir, exist_ok=True)
             out_path = os.path.join(out_dir, f"_rendered_{tag}.png")
             if os.path.abspath(out_path) == os.path.abspath(img_path):
                 out_path = os.path.join(tempfile.gettempdir(), f"_rendered_{tag}.png")
-            rgb.save(out_path, format="PNG")
+            rgb.save(out_path, format="PNG", optimize=False)
             if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
                 return out_path
     except Exception:
@@ -76,7 +125,8 @@ def create_pkpdcl_pdf(data, output_path="pkpdcl_bill.pdf", logo_path=None, qr_pa
     x_left = 12
     y = 8
 
-    clean_logo = _prepare_image_path(logo_path, "pkpdcl_logo")
+    actual_logo = _resolve_logo_path(logo_path)
+    clean_logo = _prepare_image_path(actual_logo, "pkpdcl_logo", is_qr=False)
     if clean_logo:
         try:
             logo_w = 24
@@ -264,7 +314,7 @@ def create_pkpdcl_pdf(data, output_path="pkpdcl_bill.pdf", logo_path=None, qr_pa
     pdf.cell(page_w, 4.5, text="SCAN TO PAY", ln=True)
     y = pdf.get_y() + 1.5
 
-    clean_qr = _prepare_image_path(qr_path, "pkpdcl_qr")
+    clean_qr = _prepare_image_path(qr_path, "pkpdcl_qr", is_qr=True)
     if clean_qr:
         try:
             qr_size = 30
