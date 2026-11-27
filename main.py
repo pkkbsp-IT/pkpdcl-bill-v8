@@ -9,7 +9,6 @@ from kivy.core.window import Window
 from kivy.graphics import Color, Rectangle
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen, ScreenManager
@@ -35,7 +34,7 @@ except ImportError:
     FPDF = None
 
 
-def auto_height_label(lbl: Label, min_h: float = 28, pad_y: float = 10):
+def auto_height_label(lbl: Label, min_h: float = 28, pad_y: float = 12):
     def _sync(instance, _val):
         w = instance.width
         if w > 10:
@@ -46,31 +45,55 @@ def auto_height_label(lbl: Label, min_h: float = 28, pad_y: float = 10):
     lbl.bind(width=_sync, text=_sync)
 
 
-def get_base_dir():
+def is_dir_writable(path: str) -> bool:
+    try:
+        os.makedirs(path, exist_ok=True)
+        test_file = os.path.join(path, ".write_test")
+        with open(test_file, "w", encoding="utf-8") as f:
+            f.write("ok")
+        os.remove(test_file)
+        return True
+    except Exception:
+        return False
+
+
+def get_base_dir(fallback_root: str = None):
     candidates = [
         "/storage/emulated/0/Download/PKPDCL",
         "/sdcard/Download/PKPDCL",
-        os.path.join(os.getcwd(), "pkpdcl_data"),
     ]
+    if fallback_root:
+        candidates.append(os.path.join(fallback_root, "PKPDCL"))
+    candidates.append(os.path.join(os.getcwd(), "pkpdcl_data"))
+
     for path in candidates:
-        try:
-            os.makedirs(path, exist_ok=True)
-            test_file = os.path.join(path, ".write_test")
-            with open(test_file, "w", encoding="utf-8") as f:
-                f.write("ok")
-            os.remove(test_file)
+        if is_dir_writable(path):
             return path
-        except Exception:
-            continue
     return os.getcwd()
 
 
-def save_crash_log(tb_text: str):
+def resolve_writable_dir(primary_dir: str, fallback_root: str = None) -> str:
+    if is_dir_writable(primary_dir):
+        return primary_dir
+    if fallback_root:
+        fb = os.path.join(fallback_root, "PKPDCL")
+        if is_dir_writable(fb):
+            return fb
+    local_fb = os.path.join(os.getcwd(), "pkpdcl_data")
+    if is_dir_writable(local_fb):
+        return local_fb
+    return os.getcwd()
+
+
+def save_crash_log(tb_text: str, fallback_root: str = None):
     log_paths = [
         "/storage/emulated/0/Download/pkpdcl_crash.log",
         "/sdcard/Download/pkpdcl_crash.log",
-        os.path.join(get_base_dir(), "pkpdcl_crash.log"),
     ]
+    if fallback_root:
+        log_paths.append(os.path.join(fallback_root, "pkpdcl_crash.log"))
+    log_paths.append(os.path.join(os.getcwd(), "pkpdcl_crash.log"))
+
     for p in log_paths:
         try:
             os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -166,6 +189,7 @@ def load_or_init_data(base_dir: str):
 
 
 def save_data_file(base_dir: str, data_obj: dict):
+    os.makedirs(base_dir, exist_ok=True)
     data_file = os.path.join(base_dir, "pkpdcl_data.json")
     with open(data_file, "w", encoding="utf-8") as f:
         json.dump(data_obj, f, indent=2, ensure_ascii=False)
@@ -370,7 +394,7 @@ class LoginScreen(Screen):
             background_color=(1, 1, 1, 1),
             foreground_color=(0.1, 0.1, 0.1, 1),
             hint_text_color=(0.45, 0.48, 0.52, 1),
-            size_hint_y=None,
+            size_hint=(1, None),
             height=56,
         )
         root.add_widget(self.emp_input)
@@ -386,7 +410,7 @@ class LoginScreen(Screen):
             background_color=(1, 1, 1, 1),
             foreground_color=(0.1, 0.1, 0.1, 1),
             hint_text_color=(0.45, 0.48, 0.52, 1),
-            size_hint_y=None,
+            size_hint=(1, None),
             height=56,
         )
         root.add_widget(self.pass_input)
@@ -398,7 +422,7 @@ class LoginScreen(Screen):
             color=(1, 1, 1, 1),
             background_normal="",
             background_color=(0.12, 0.47, 0.25, 1),
-            size_hint_y=None,
+            size_hint=(1, None),
             height=54,
         )
         login_btn.bind(on_press=self.do_login)
@@ -444,7 +468,7 @@ class BillingScreen(Screen):
         outer = ScrollView(do_scroll_x=False, do_scroll_y=True)
         main_box = BoxLayout(
             orientation="vertical",
-            padding=14,
+            padding=12,
             spacing=12,
             size_hint_y=None,
         )
@@ -456,258 +480,11 @@ class BillingScreen(Screen):
         main_box.bind(pos=self._update_bg, size=self._update_bg)
 
         # Top header
-        top_bar = BoxLayout(orientation="horizontal", size_hint_y=None, height=68, spacing=10)
+        top_bar = BoxLayout(orientation="horizontal", size_hint_y=None, height=64, spacing=8)
         if self.app_ref.logo_path and os.path.exists(self.app_ref.logo_path):
             top_bar.add_widget(
-                Image(source=self.app_ref.logo_path, size_hint=(None, None), size=(58, 58), allow_stretch=True)
+                Image(source=self.app_ref.logo_path, size_hint=(None, None), size=(54, 54), allow_stretch=True)
             )
         top_title = Label(
-            text="PKPDCL Spot Billing",
-            font_size="18sp",
-            bold=True,
-            color=(1.0, 0.84, 0.24, 1),
-            halign="left",
-            valign="middle",
-        )
-        top_title.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], val[1])))
-        top_bar.add_widget(top_title)
-
-        logout_btn = Button(
-            text="Logout",
-            size_hint=(None, None),
-            size=(86, 44),
-            background_normal="",
-            background_color=(0.75, 0.22, 0.22, 1),
-        )
-        logout_btn.bind(on_press=self.go_logout)
-        top_bar.add_widget(logout_btn)
-        main_box.add_widget(top_bar)
-
-        names = list(self.app_ref.consumer_map.keys())
-
-        # Consumer selector row
-        sel_box = BoxLayout(orientation="horizontal", spacing=10, size_hint_y=None, height=56)
-        lbl_con = Label(
-            text="Consumer:",
-            color=(1, 1, 1, 1),
-            halign="left",
-            valign="middle",
-            size_hint=(None, None),
-            size=(120, 56),
-        )
-        lbl_con.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], val[1])))
-        sel_box.add_widget(lbl_con)
-
-        self.spinner = Spinner(
-            text=names[0] if names else "",
-            values=names,
-            font_size="15sp",
-            size_hint_y=None,
-            height=54,
-        )
-        self.spinner.bind(text=self.on_consumer_select)
-        sel_box.add_widget(self.spinner)
-        main_box.add_widget(sel_box)
-
-        # Consumer details box with automatic height
-        self.info_label = Label(
-            text="",
-            font_size="13sp",
-            color=(0.90, 0.95, 1.0, 1),
-            halign="left",
-            valign="top",
-            size_hint_y=None,
-            height=76,
-        )
-        auto_height_label(self.info_label, min_h=72, pad_y=12)
-        main_box.add_widget(self.info_label)
-
-        # Input rows
-        def make_input_row(label_text, default_val):
-            row = BoxLayout(orientation="horizontal", spacing=10, size_hint_y=None, height=56)
-            lbl = Label(
-                text=label_text,
-                color=(1, 1, 1, 1),
-                font_size="14sp",
-                halign="left",
-                valign="middle",
-                size_hint=(None, None),
-                size=(145, 56),
-            )
-            lbl.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], val[1])))
-            inp = TextInput(
-                text=str(default_val),
-                input_filter="float",
-                multiline=False,
-                font_size="16sp",
-                padding=[12, 14, 12, 10],
-                background_normal="",
-                background_color=(1, 1, 1, 1),
-                foreground_color=(0.08, 0.08, 0.08, 1),
-                size_hint_y=None,
-                height=56,
-            )
-            row.add_widget(lbl)
-            row.add_widget(inp)
-            return row, inp
-
-        row_prev, self.prev_input = make_input_row("Prev Reading:", "100")
-        row_curr, self.curr_input = make_input_row("Curr Reading:", "150")
-        init_rate = self.app_ref.consumer_map[names[0]].get("rate", 8.3) if names else 8.3
-        row_rate, self.rate_input = make_input_row("Rate (Rs/Unit):", init_rate)
-
-        main_box.add_widget(row_prev)
-        main_box.add_widget(row_curr)
-        main_box.add_widget(row_rate)
-
-        self.summary_label = Label(
-            text="",
-            font_size="16sp",
-            bold=True,
-            color=(0.28, 1.0, 0.62, 1),
-            halign="center",
-            valign="middle",
-            size_hint_y=None,
-            height=44,
-        )
-        auto_height_label(self.summary_label, min_h=40, pad_y=10)
-        main_box.add_widget(self.summary_label)
-
-        btn_row = BoxLayout(orientation="horizontal", spacing=10, size_hint_y=None, height=54)
-        calc_btn = Button(
-            text="Calculate Bill",
-            font_size="15sp",
-            bold=True,
-            background_normal="",
-            background_color=(0.16, 0.54, 0.96, 1),
-        )
-        calc_btn.bind(on_press=self.calculate_bill)
-
-        pdf_btn = Button(
-            text="Generate PDF",
-            font_size="15sp",
-            bold=True,
-            background_normal="",
-            background_color=(0.12, 0.47, 0.25, 1),
-        )
-        pdf_btn.bind(on_press=self.create_pdf)
-
-        btn_row.add_widget(calc_btn)
-        btn_row.add_widget(pdf_btn)
-        main_box.add_widget(btn_row)
-
-        self.qr_image = Image(source="", size_hint_y=None, height=0, allow_stretch=True)
-        main_box.add_widget(self.qr_image)
-
-        self.status_label = Label(
-            text=f"Folder: {self.app_ref.base_dir}",
-            font_size="12sp",
-            color=(0.84, 0.90, 0.98, 1),
-            halign="left",
-            valign="top",
-            size_hint_y=None,
-            height=54,
-        )
-        auto_height_label(self.status_label, min_h=44, pad_y=14)
-        main_box.add_widget(self.status_label)
-
-        self.on_consumer_select(self.spinner, self.spinner.text)
-        self.calculate_bill()
-
-        outer.add_widget(main_box)
-        self.add_widget(outer)
-
-    def _update_bg(self, instance, value):
-        self.bg_rct.pos = instance.pos
-        self.bg_rct.size = instance.size
-
-    def go_logout(self, instance):
-        self.app_ref.sm.current = "login"
-
-    def on_consumer_select(self, spinner, text):
-        c = self.app_ref.consumer_map.get(text)
-        if not c:
-            return
-        self.info_label.text = (
-            f"BP ID: {c.get('bp_id', '-')}  |  Meter: {c.get('meter', '-')}\n"
-            f"Mobile: {c.get('mobile', '-')}  |  UPI: {c.get('upi', '-')}\n"
-            f"Address: {c.get('address', '-')}"
-        )
-        if hasattr(self, "rate_input"):
-            self.rate_input.text = str(c.get("rate", 8.3))
-            self.calculate_bill()
-
-    def _compute(self):
-        prev_v = float(self.prev_input.text.strip() or 0)
-        curr_v = float(self.curr_input.text.strip() or 0)
-        rate_v = float(self.rate_input.text.strip() or 8.3)
-        units = max(0.0, curr_v - prev_v)
-        amount = units * rate_v
-        return prev_v, curr_v, rate_v, units, amount
-
-    def calculate_bill(self, instance=None):
-        try:
-            _, _, _, units, amount = self._compute()
-            self.summary_label.text = f"Units: {units:.2f} kWh  |  Total: Rs. {amount:.2f}"
-        except Exception as e:
-            self.status_label.text = f"Calculation error: {e}"
-
-    def create_pdf(self, instance=None):
-        try:
-            prev_v, curr_v, rate_v, units, amount = self._compute()
-            name = self.spinner.text
-            consumer = dict(self.app_ref.consumer_map.get(name, {"name": name or "Consumer", "rate": 8.3}))
-            consumer["rate"] = rate_v
-
-            for item in self.app_ref.consumers:
-                if item.get("name") == consumer.get("name"):
-                    item["rate"] = rate_v
-            save_data_file(self.app_ref.base_dir, self.app_ref.data_obj)
-
-            qr_path = generate_upi_qr(self.app_ref.base_dir, consumer, amount)
-            if qr_path and os.path.exists(qr_path):
-                self.qr_image.source = qr_path
-                self.qr_image.height = 140
-                self.qr_image.reload()
-
-            pdf_path = generate_bill_pdf(
-                base_dir=self.app_ref.base_dir,
-                consumer=consumer,
-                prev_reading=prev_v,
-                curr_reading=curr_v,
-                units=units,
-                amount=amount,
-                logo_path=self.app_ref.logo_path,
-                qr_path=qr_path,
-            )
-            self.calculate_bill()
-            self.status_label.text = f"PDF Generated:\n{pdf_path}"
-        except Exception:
-            tb = traceback.format_exc()
-            log_path = save_crash_log(tb)
-            self.status_label.text = f"PDF Error (log: {log_path}):\n{tb.splitlines()[-1]}"
-
-
-class PKPDCLBillApp(App):
-    def build(self):
-        Window.clearcolor = (0.93, 0.95, 0.98, 1)
-        try:
-            self.base_dir = get_base_dir()
-            self.logo_path = ensure_logo_file(self.base_dir)
-            self.data_obj = load_or_init_data(self.base_dir)
-            self.consumers = self.data_obj["consumers"]
-            self.consumer_map = {c["name"]: c for c in self.consumers}
-
-            self.sm = ScreenManager()
-            self.sm.add_widget(LoginScreen(self, name="login"))
-            self.sm.add_widget(BillingScreen(self, name="billing"))
-            self.sm.current = "login"
-            return self.sm
-        except Exception:
-            tb = traceback.format_exc()
-            log_path = save_crash_log(tb)
-            return build_error_widget(tb, log_path)
-
-
-if __name__ == "__main__":
-    PKPDCLBillApp().run()
+            text="PKPDCL Billing",
+            font_size="1
